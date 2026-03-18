@@ -19,7 +19,7 @@ impl Parser {
     pub fn new(s: &str) -> Result<Self, ParserError> {
         let raw = s
             .chars()
-            .map(|c| Self::decode_base64_char(c).ok_or_else(|| ParserError::input_character(c)))
+            .map(Self::decode_base64_char)
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self { raw })
@@ -39,14 +39,14 @@ impl Parser {
         ParseState::new(self)
     }
 
-    const fn decode_base64_char(c: char) -> Option<u8> {
+    fn decode_base64_char(c: char) -> Result<u8, ParserError> {
         match c {
-            'A'..='Z' => Some((c as u8) - b'A'),
-            'a'..='z' => Some(26 + (c as u8) - b'a'),
-            '0'..='9' => Some(52 + (c as u8) - b'0'),
-            '+' => Some(62),
-            '/' => Some(63),
-            _ => None,
+            'A'..='Z' => Ok((c as u8) - b'A'),
+            'a'..='z' => Ok(26 + (c as u8) - b'a'),
+            '0'..='9' => Ok(52 + (c as u8) - b'0'),
+            '+' => Ok(62),
+            '/' => Ok(63),
+            _ => Err(ParserError::input_character(c)),
         }
     }
 }
@@ -55,9 +55,6 @@ impl Parser {
 /// dates.
 #[derive(Debug)]
 pub struct ParseState<'a> {
-    #[allow(dead_code)]
-    magic: [i32; 2],
-
     first_day: i32,
     last_day: i32,
 
@@ -67,17 +64,17 @@ pub struct ParseState<'a> {
 impl<'a> ParseState<'a> {
     fn new(parser: &'a Parser) -> Result<Self, ParserError> {
         let mut bit_reader = BitReader::new(&parser.raw);
-        let magic = [
+        let magic = (
             bit_reader
                 .read_i32(12)
                 .ok_or_else(ParserError::data_corruption)?,
             bit_reader
                 .read_i32(6)
                 .ok_or_else(ParserError::data_corruption)?,
-        ];
+        );
 
-        if magic[0] != 139 || magic[1] != 63 {
-            return Err(ParserError::magic(magic[0], magic[1]));
+        if magic.0 != 139 || magic.1 != 63 {
+            return Err(ParserError::magic(magic.0, magic.1));
         }
 
         let first_day = bit_reader
@@ -92,7 +89,6 @@ impl<'a> ParseState<'a> {
         }
 
         Ok(Self {
-            magic,
             first_day,
             last_day,
 
@@ -135,7 +131,7 @@ impl<'a> ParseState<'a> {
 
         for day in self.first_day..=self.last_day {
             let w = day % 7;
-            if w == 3 || w == 4 {
+            if matches!(w, 3 | 4) {
                 // Skip Saturday and Sunday
                 continue;
             }
@@ -219,7 +215,7 @@ impl Iterator for ParseIter<'_> {
 
         loop {
             let w = self.current_day % 7;
-            if w == 3 || w == 4 {
+            if matches!(w, 3 | 4) {
                 self.current_day += 5 - w;
             }
 
@@ -264,7 +260,7 @@ impl<'a> BitReader<'a> {
             return None;
         }
 
-        let bit = self.raw[self.by] & (1 << self.bi) != 0;
+        let bit = (self.raw[self.by] >> self.bi) & 1 != 0;
         *self += 1;
 
         Some(bit)
