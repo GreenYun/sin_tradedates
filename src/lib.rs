@@ -209,7 +209,7 @@ impl Iterator for ParseIter<'_> {
     type Item = Result<NaiveDate, ParserError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.current_day >= self.state.last_day {
+        if self.current_day > self.state.last_day {
             return None;
         }
 
